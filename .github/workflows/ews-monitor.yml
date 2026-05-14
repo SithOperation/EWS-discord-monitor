@@ -2,7 +2,7 @@ name: EWS Discord Monitor
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -33,6 +33,7 @@ jobs:
         run: |
           git config user.name "ews-monitor"
           git config user.email "ews-monitor@users.noreply.github.com"
+
           if [ -f state.json ]; then
             git add state.json
             git commit -m "Update EWS monitor state" || echo "No changes to commit"
