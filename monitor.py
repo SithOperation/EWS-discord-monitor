@@ -4,31 +4,30 @@ import re
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
+from html import unescape
 
 SITE_URL = "https://ews.kylemcdonald.net/"
-DATA_URL = "https://ews.kylemcdonald.net/dashboard.json"
 STATE_FILE = Path("state.json")
 
 DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
-def fetch_json():
-    response = requests.get(DATA_URL, timeout=20)
+def fetch_site():
+    response = requests.get(
+        SITE_URL,
+        timeout=20,
+        headers={"User-Agent": "Mozilla/5.0 EWS-Discord-Monitor"}
+    )
     response.raise_for_status()
-    return response.json()
+    return response.text
 
-def find_level(data):
-    text = json.dumps(data)
+def extract_level(html):
+    text = unescape(html)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text)
 
-    patterns = [
-        r'"level"\s*:\s*([1-5])',
-        r'"emergency_level"\s*:\s*([1-5])',
-        r'"emergencyLevel"\s*:\s*([1-5])',
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
+    match = re.search(r"Emergency\s+Level\s+([1-5])\s*/\s*5", text, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
 
     return None
 
@@ -45,12 +44,12 @@ def send_discord_alert(message):
     response.raise_for_status()
 
 def main():
-    data = fetch_json()
-    current_level = find_level(data)
+    html = fetch_site()
+    current_level = extract_level(html)
 
     if current_level is None:
         send_discord_alert(
-            "⚠️ EWS Monitor still could not read the current level from dashboard.json.\n"
+            "⚠️ EWS Monitor could not read the current level from the webpage HTML.\n"
             f"{SITE_URL}"
         )
         return
