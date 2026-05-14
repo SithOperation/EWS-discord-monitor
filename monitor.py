@@ -16,15 +16,18 @@ def fetch_site():
     return response.text
 
 def extract_level(html):
-    # Looks for wording like "current emergency level..."
-    match = re.search(r"level[^0-9]{0,40}([1-5])", html, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
 
-    # Backup: search for any "Level 1-5" pattern
-    match = re.search(r"level\s*([1-5])", html, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
+    patterns = [
+        r'"level"\s*:\s*([1-5])',
+        r'Level\s*([1-5])',
+        r'CURRENT LEVEL[^0-9]*([1-5])',
+        r'emergency level[^0-9]*([1-5])',
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
 
     return None
 
