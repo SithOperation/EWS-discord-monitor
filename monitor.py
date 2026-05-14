@@ -1,35 +1,23 @@
 import json
 import os
-import re
 import requests
 from pathlib import Path
 from datetime import datetime, timezone
-from html import unescape
 
 SITE_URL = "https://ews.kylemcdonald.net/"
+DATA_URL = "https://pub-49bb6a6f314c47be9b481c25e5f6ca9e.r2.dev/dashboard.json"
 STATE_FILE = Path("state.json")
 
 DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 
-def fetch_site():
+def fetch_data():
     response = requests.get(
-        SITE_URL,
+        DATA_URL,
         timeout=20,
         headers={"User-Agent": "Mozilla/5.0 EWS-Discord-Monitor"}
     )
     response.raise_for_status()
-    return response.text
-
-def extract_level(html):
-    text = unescape(html)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text)
-
-    match = re.search(r"Emergency\s+Level\s+([1-5])\s*/\s*5", text, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-
-    return None
+    return response.json()
 
 def load_state():
     if STATE_FILE.exists():
@@ -44,35 +32,76 @@ def send_discord_alert(message):
     response.raise_for_status()
 
 def main():
-    html = fetch_site()
-    current_level = extract_level(html)
+    data = fetch_data()
+
+    current = data.get("current", {})
+    live_status = data.get("liveStatus", {})
+    signal = data.get("signals", {}).get("composite", {})
+
+    current_level = current.get("emergencyLevel")
+    concurrent_count = current.get("concurrentCount")
+    expected_count = signal.get("expectedConcurrentCount")
+    z_score = current.get("zScore")
+    as_of = current.get("asOf") or live_status.get("latestSampledAt")
 
     if current_level is None:
         send_discord_alert(
-            "⚠️ EWS Monitor could not read the current level from the webpage HTML.\n"
+            "⚠️ EWS Monitor could not read current.emergencyLevel from the public dashboard JSON.\n"
             f"{SITE_URL}"
         )
         return
 
     state = load_state()
     previous_level = state.get("level")
+    previous_count = state.get("concurrent_count")
+
     now = datetime.now(timezone.utc).isoformat()
 
+    message = None
+
     if previous_level is None:
-        send_discord_alert(
-            f"✅ EWS Monitor is now active.\n"
+        message = (
+            "✅ EWS Monitor is now active.\n"
             f"Current level: **{current_level}/5**\n"
-            f"{SITE_URL}"
-        )
-    elif current_level != previous_level:
-        send_discord_alert(
-            f"🚨 EWS level changed.\n"
-            f"Level: **{previous_level}/5 → {current_level}/5**\n"
+            f"Airborne tracked aircraft: **{concurrent_count}**\n"
+            f"Expected: **{round(expected_count, 1) if expected_count is not None else 'unknown'}**\n"
+            f"Deviation: **{round(z_score, 2) if z_score is not None else 'unknown'}σ**\n"
+            f"As of: `{as_of}`\n"
             f"{SITE_URL}"
         )
 
+    elif current_level != previous_level:
+        message = (
+            "🚨 EWS level changed.\n"
+            f"Level: **{previous_level}/5 → {current_level}/5**\n"
+            f"Airborne tracked aircraft: **{concurrent_count}**\n"
+            f"Expected: **{round(expected_count, 1) if expected_count is not None else 'unknown'}**\n"
+            f"Deviation: **{round(z_score, 2) if z_score is not None else 'unknown'}σ**\n"
+            f"As of: `{as_of}`\n"
+            f"{SITE_URL}"
+        )
+
+    elif previous_count is not None and concurrent_count is not None:
+        jump = concurrent_count - previous_count
+        if jump >= 75:
+            message = (
+                "⚠️ EWS aircraft activity jumped sharply.\n"
+                f"Tracked aircraft: **{previous_count} → {concurrent_count}**\n"
+                f"Jump: **+{jump}**\n"
+                f"Level: **{current_level}/5**\n"
+                f"Deviation: **{round(z_score, 2) if z_score is not None else 'unknown'}σ**\n"
+                f"As of: `{as_of}`\n"
+                f"{SITE_URL}"
+            )
+
+    if message:
+        send_discord_alert(message)
+
     state["level"] = current_level
+    state["concurrent_count"] = concurrent_count
+    state["z_score"] = z_score
     state["last_checked"] = now
+    state["as_of"] = as_of
     save_state(state)
 
 if __name__ == "__main__":
