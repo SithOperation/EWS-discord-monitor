@@ -1,0 +1,46 @@
+name: Update Website Dashboard - EWS
+
+on:
+  workflow_run:
+    workflows: ["monitor"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  update-dashboard:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout EWS repository
+        uses: actions/checkout@v4
+
+
+      - name: Checkout Website repository
+        uses: actions/checkout@v4
+        with:
+          repository: SithOperation/my-website
+          path: website
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+
+      - name: Copy EWS state
+        run: |
+          cp state.json website/data/ews_state.json
+
+
+      - name: Commit dashboard update
+        working-directory: website
+        run: |
+          git config user.name "ews-monitor"
+          git config user.email "actions@github.com"
+
+          git add data/ews_state.json
+
+          git commit -m "Update EWS dashboard state" || exit 0
+
+          git push
