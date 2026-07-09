@@ -9,9 +9,7 @@ on:
 
 
 permissions:
-
   contents: write
-
 
 
 jobs:
@@ -30,12 +28,10 @@ jobs:
           fetch-depth: 0
 
 
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
 
 
       - name: Install dependencies
@@ -43,28 +39,21 @@ jobs:
           pip install -r requirements.txt
 
 
-
       - name: Run monitor
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
         run: |
-
           python monitor.py
 
 
-
-      - name: Verify state file
+      - name: Verify state
         run: |
-
-          ls -lh state.json
-
+          test -f state.json
           cat state.json
 
 
-
       - name: Commit state
-
         run: |
 
           git config user.name "ews-monitor"
@@ -76,15 +65,11 @@ jobs:
 
 
           if git diff --cached --quiet; then
-
-            echo "No changes"
-
-            exit 0
-
+              echo "No changes"
+              exit 0
           fi
 
 
           git commit -m "Update EWS state"
-
 
           git push
