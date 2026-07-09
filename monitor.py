@@ -25,7 +25,10 @@ def load_state():
     return {}
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    STATE_FILE.write_text(
+        json.dumps(state, indent=2),
+        encoding="utf-8"
+    )
 
 def send_discord_alert(message):
     response = requests.post(DISCORD_WEBHOOK_URL, json={"content": message}, timeout=20)
